@@ -128,16 +128,24 @@ def main():
     product = load_product()
 
     rev        = pl.get(1,  0)   # 매출액
-    cogs       = pl.get(35, 0)   # 매출원가
-    gross      = pl.get(66, 0)   # 매출총이익
+    cogs       = pl.get(35, 0)   # 매출원가 (장부상)
+    gross      = pl.get(66, 0)   # 매출총이익 (장부상 – 외주비 미포함)
     sga        = pl.get(67, 0)   # 판관비
     op_inc     = pl.get(129, 0)  # 영업이익
     non_rev    = pl.get(130, 0)  # 영업외수익
     non_exp    = pl.get(179, 0)  # 영업외비용
     int_exp    = pl.get(180, 0)  # 이자비용
     net        = pl.get(219, 0)  # 당기순이익
-    outsrc     = pl.get(121, 0)  # 외주용역비
+    outsrc     = pl.get(121, 0)  # 외주용역비 (실질 직접원가)
     salary     = pl.get(68, 0)   # 급여
+
+    # ── 실질 매출총이익 재계산 ──────────────────────────────
+    # 이 회사는 원자재를 외주업체(협력사)에 맡겨 가공 후 판매하는 구조.
+    # 외주용역비는 판관비로 분류되어 있으나, 경제적 실질은 직접 제조원가임.
+    # → 실질 매출총이익 = 매출액 - 장부매출원가 - 외주용역비
+    real_cogs  = cogs + outsrc          # 실질 매출원가
+    real_gross = rev - real_cogs        # 실질 매출총이익
+    sga_excl   = sga - outsrc           # 외주비 제외 판관비 (순수 운영비)
 
     # 티에이케이 계열 통합
     tak_rev = sum(v for k, v in clients.items() if '티에이케이' in k)
@@ -161,26 +169,43 @@ def main():
     print()
     print("【 1. 수익성 분석 】")
     print(sep)
+
+    # 매출총이익률 비교 (장부 vs 실질)
+    print("  [매출총이익률 재계산]")
+    print(f"  {'항목':<28}  {'장부 기준':>14}  {'실질 기준':>14}  비고")
+    print(f"  {'-'*28}  {'-'*14}  {'-'*14}  {'-'*20}")
+    print(f"  {'매출액':<28}  {w(rev):>14}  {w(rev):>14}")
+    print(f"  {'(-) 장부 매출원가':<28}  {w(cogs):>14}  {w(cogs):>14}")
+    print(f"  {'(-) 외주용역비 (실질 원가)':<28}  {'미포함':>14}  {w(outsrc):>14}  ← 핵심 조정 항목")
+    print(f"  {'= 매출총이익':<28}  {w(gross):>14}  {w(real_gross):>14}")
+    print(f"  {'매출총이익률':<28}  {pct(gross,rev):>14}  {pct(real_gross,rev):>14}  ← 실질 기준이 맞음")
+    print()
+    print(f"  ※ 외주용역비({w(outsrc)}원)는 원자재를 협력사에 맡겨")
+    print(f"     가공하는 이 회사의 핵심 직접원가입니다.")
+    print(f"     장부상 판관비로 분류되어 있으나 경제적 실질은 매출원가임.")
+    print()
+
     metrics = [
-        ("매출총이익률",  gross / rev,    "  (원가 효율성 ↑ 수록 좋음)"),
-        ("영업이익률",    op_inc / rev,   "  (핵심 영업 효율)"),
-        ("당기순이익률",  net / rev,      "  (최종 수익성)"),
-        ("이자비용/영업이익", int_exp / op_inc, "  (금융비용 부담)"),
-        ("외주비/매출",   outsrc / rev,   "  (원가 구조의 핵심)"),
+        ("실질 매출총이익률",    real_gross / rev,    "  (외주비 포함 실질 원가 차감)"),
+        ("영업이익률",           op_inc / rev,        "  (핵심 영업 효율)"),
+        ("당기순이익률",         net / rev,           "  (최종 수익성)"),
+        ("이자비용/영업이익",    int_exp / op_inc,    "  (금융비용 부담)"),
+        ("외주비/매출",          outsrc / rev,        "  (직접원가 집중도)"),
     ]
     for name, ratio, note in metrics:
         b = bar(min(ratio, 1.0))
         sign = "▲ 주의" if name == "이자비용/영업이익" and ratio > 0.4 else ""
         sign = "▲ 주의" if name == "외주비/매출" and ratio > 0.5 else sign
-        print(f"  {name:<20}  {ratio*100:6.1f}%  [{b}] {note}  {sign}")
+        print(f"  {name:<22}  {ratio*100:6.1f}%  [{b}] {note}  {sign}")
 
     print()
-    print(f"  ┌─ 수익성 요약 ───────────────────────────────────────────┐")
-    print(f"  │  매출액       {w(rev):>20}원                          │")
-    print(f"  │  영업이익     {w(op_inc):>20}원  (이익률 {pct(op_inc,rev)})          │")
-    print(f"  │  당기순이익   {w(net):>20}원  (이익률 {pct(net,rev)})          │")
-    print(f"  │  이자비용이 영업이익의 {pct(int_exp, op_inc)}를 소진 → 금융 부담 큼        │")
-    print(f"  └─────────────────────────────────────────────────────────┘")
+    print(f"  ┌─ 수익성 요약 (실질 기준) ──────────────────────────────────┐")
+    print(f"  │  매출액            {w(rev):>18}원                       │")
+    print(f"  │  실질 매출총이익   {w(real_gross):>18}원  (이익률 {pct(real_gross,rev)})       │")
+    print(f"  │  영업이익          {w(op_inc):>18}원  (이익률 {pct(op_inc,rev)})       │")
+    print(f"  │  당기순이익        {w(net):>18}원  (이익률 {pct(net,rev)})       │")
+    print(f"  │  이자비용이 영업이익의 {pct(int_exp, op_inc)}를 소진 → 금융 부담 큼     │")
+    print(f"  └──────────────────────────────────────────────────────────┘")
 
     # ── 2. 매출 구조 ────────────────────────────────────────
     print()
@@ -277,7 +302,7 @@ def main():
     print(SEP)
     swot = {
         "강점 (Strengths)": [
-            f"높은 매출총이익률 {pct(gross,rev)} – 부가가치 높은 사업 모델",
+            f"실질 매출총이익률 {pct(real_gross,rev)} – 외주 기반 가공 모델에서 적정 수준",
             f"수출 비중 40.5% – 글로벌 시장 진출 기반 확보",
             f"tape 제품군 이익률 39.8% – 핵심 고수익 라인 보유",
             f"다양한 섬유 제품군 (tape/cleaner/blind/back) 포트폴리오",
