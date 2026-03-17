@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>재료수불 관리</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Malgun Gothic', '맑은 고딕', sans-serif;
+      background: #f0f2f5;
+      color: #333;
+      min-height: 100vh;
+    }
+
+    header {
+      background: #1e3a5f;
+      color: white;
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+
+    header h1 { font-size: 20px; font-weight: 600; }
+    header span { font-size: 13px; opacity: 0.7; margin-left: auto; }
+
+    .container { padding: 24px; }
+
+    /* 드래그 앤 드롭 영역 */
+    .drop-zone {
+      border: 3px dashed #90b4e0;
+      border-radius: 12px;
+      background: white;
+      padding: 48px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      margin-bottom: 20px;
+    }
+
+    .drop-zone:hover, .drop-zone.dragover {
+      border-color: #1e3a5f;
+      background: #e8f0fb;
+      transform: scale(1.01);
+    }
+
+    .drop-zone .icon {
+      font-size: 48px;
+      margin-bottom: 12px;
+    }
+
+    .drop-zone h2 {
+      font-size: 18px;
+      color: #1e3a5f;
+      margin-bottom: 8px;
+    }
+
+    .drop-zone p {
+      font-size: 14px;
+      color: #666;
+    }
+
+    .drop-zone input[type="file"] {
+      display: none;
+    }
+
+    .btn {
+      display: inline-block;
+      margin-top: 16px;
+      padding: 10px 24px;
+      background: #1e3a5f;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .btn:hover { background: #2d5490; }
+
+    /* 필터 바 */
+    .filter-bar {
+      display: none;
+      background: white;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .filter-bar.visible { display: flex; }
+
+    .filter-bar label { font-size: 13px; font-weight: 600; color: #555; }
+
+    .filter-bar input, .filter-bar select {
+      padding: 7px 10px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 13px;
+      font-family: inherit;
+    }
+
+    .filter-bar input:focus, .filter-bar select:focus {
+      outline: none;
+      border-color: #1e3a5f;
+    }
+
+    .badge {
+      background: #e8f0fb;
+      color: #1e3a5f;
+      border-radius: 20px;
+      padding: 4px 12px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    /* 테이블 영역 */
+    .table-wrapper {
+      display: none;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+      overflow: hidden;
+    }
+
+    .table-wrapper.visible { display: block; }
+
+    .table-scroll {
+      overflow-x: auto;
+      max-height: 65vh;
+      overflow-y: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    thead th {
+      background: #1e3a5f;
+      color: white;
+      padding: 10px 12px;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      font-weight: 600;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    thead th:hover { background: #2d5490; }
+
+    thead th.sort-asc::after { content: ' ▲'; font-size: 10px; }
+    thead th.sort-desc::after { content: ' ▼'; font-size: 10px; }
+
+    tbody tr:nth-child(even) { background: #f8f9fb; }
+    tbody tr:hover { background: #dde9f8; }
+
+    tbody td {
+      padding: 8px 12px;
+      border-bottom: 1px solid #eee;
+      max-width: 200px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    tbody td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+    /* 로딩 */
+    .loading {
+      display: none;
+      text-align: center;
+      padding: 40px;
+      font-size: 16px;
+      color: #1e3a5f;
+    }
+
+    .loading.visible { display: block; }
+
+    .spinner {
+      display: inline-block;
+      width: 24px;
+      height: 24px;
+      border: 3px solid #90b4e0;
+      border-top-color: #1e3a5f;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* 파일 정보 */
+    .file-info {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: #555;
+    }
+    .file-info.visible { display: flex; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>📦 재료수불 관리</h1>
+  <div class="file-info" id="fileInfo">
+    <span id="fileName"></span>
+    <span class="badge" id="rowCount"></span>
+  </div>
+  <span>엑셀 파일을 드래그하여 데이터를 조회하세요</span>
+</header>
+
+<div class="container">
+
+  <!-- 드래그 앤 드롭 영역 -->
+  <div class="drop-zone" id="dropZone">
+    <div class="icon">📂</div>
+    <h2>엑셀 파일을 여기에 드래그하세요</h2>
+    <p>.xlsx / .xls 파일을 지원합니다</p>
+    <button class="btn" onclick="document.getElementById('fileInput').click()">파일 선택</button>
+    <input type="file" id="fileInput" accept=".xlsx,.xls">
+  </div>
+
+  <!-- 로딩 -->
+  <div class="loading" id="loading">
+    <span class="spinner"></span> 파일을 읽는 중...
+  </div>
+
+  <!-- 필터 바 -->
+  <div class="filter-bar" id="filterBar">
+    <label>검색</label>
+    <input type="text" id="searchInput" placeholder="ITEM, 출고지, 입고지 등..." style="width:200px">
+    <label>시트</label>
+    <select id="sheetSelect"></select>
+    <label>월</label>
+    <select id="monthFilter">
+      <option value="">전체</option>
+      <option value="1">1월</option><option value="2">2월</option><option value="3">3월</option>
+      <option value="4">4월</option><option value="5">5월</option><option value="6">6월</option>
+      <option value="7">7월</option><option value="8">8월</option><option value="9">9월</option>
+      <option value="10">10월</option><option value="11">11월</option><option value="12">12월</option>
+    </select>
+    <button class="btn" id="resetBtn" style="padding:7px 14px; background:#6c757d;">초기화</button>
+  </div>
+
+  <!-- 테이블 -->
+  <div class="table-wrapper" id="tableWrapper">
+    <div class="table-scroll">
+      <table id="dataTable">
+        <thead id="tableHead"></thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  let workbook = null;
+  let allData = [];
+  let headers = [];
+  let sortCol = -1;
+  let sortAsc = true;
+
+  const dropZone = document.getElementById('dropZone');
+  const fileInput = document.getElementById('fileInput');
+  const loading = document.getElementById('loading');
+  const filterBar = document.getElementById('filterBar');
+  const tableWrapper = document.getElementById('tableWrapper');
+  const sheetSelect = document.getElementById('sheetSelect');
+  const searchInput = document.getElementById('searchInput');
+  const monthFilter = document.getElementById('monthFilter');
+  const resetBtn = document.getElementById('resetBtn');
+  const fileInfo = document.getElementById('fileInfo');
+
+  // 드래그 앤 드롭 이벤트
+  dropZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dropZone.classList.add('dragover');
+  });
+
+  dropZone.addEventListener('dragleave', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dropZone.classList.remove('dragover');
+  });
+
+  dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dropZone.classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (file) loadFile(file);
+  });
+
+  fileInput.addEventListener('change', (e) => {
+    if (e.target.files[0]) loadFile(e.target.files[0]);
+  });
+
+  // 파일 로드
+  function loadFile(file) {
+    if (!file.name.match(/\.(xlsx|xls)$/i)) {
+      alert('엑셀 파일(.xlsx, .xls)만 지원합니다.');
+      return;
+    }
+
+    dropZone.style.display = 'none';
+    loading.classList.add('visible');
+    filterBar.classList.remove('visible');
+    tableWrapper.classList.remove('visible');
+
+    document.getElementById('fileName').textContent = '📄 ' + file.name;
+    fileInfo.classList.add('visible');
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        workbook = XLSX.read(e.target.result, { type: 'array', cellDates: true });
+        populateSheets();
+        loadSheet(workbook.SheetNames[0]);
+      } catch (err) {
+        alert('파일을 읽는 중 오류가 발생했습니다: ' + err.message);
+        resetView();
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  function populateSheets() {
+    sheetSelect.innerHTML = '';
+    workbook.SheetNames.forEach(name => {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      sheetSelect.appendChild(opt);
+    });
+  }
+
+  sheetSelect.addEventListener('change', () => {
+    loadSheet(sheetSelect.value);
+  });
+
+  function loadSheet(sheetName) {
+    loading.classList.add('visible');
+    tableWrapper.classList.remove('visible');
+
+    setTimeout(() => {
+      const sheet = workbook.Sheets[sheetName];
+      const json = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, dateNF: 'yyyy-mm-dd' });
+
+      if (json.length < 2) {
+        loading.classList.remove('visible');
+        tableWrapper.classList.add('visible');
+        document.getElementById('tableHead').innerHTML = '<tr><th>데이터 없음</th></tr>';
+        document.getElementById('tableBody').innerHTML = '';
+        return;
+      }
+
+      headers = (json[0] || []).map((h, i) => h || `열${i+1}`);
+      allData = json.slice(1).filter(row => row.some(cell => cell !== null && cell !== undefined && cell !== ''));
+
+      searchInput.value = '';
+      monthFilter.value = '';
+      sortCol = -1;
+      sortAsc = true;
+
+      renderTable(allData);
+      loading.classList.remove('visible');
+      filterBar.classList.add('visible');
+      tableWrapper.classList.add('visible');
+    }, 50);
+  }
+
+  function renderTable(data) {
+    // 헤더
+    const thead = document.getElementById('tableHead');
+    thead.innerHTML = '<tr>' + headers.map((h, i) =>
+      `<th onclick="sortBy(${i})" title="${h}">${h}</th>`
+    ).join('') + '</tr>';
+
+    // 바디
+    const tbody = document.getElementById('tableBody');
+    const fragment = document.createDocumentFragment();
+
+    data.forEach(row => {
+      const tr = document.createElement('tr');
+      headers.forEach((_, i) => {
+        const td = document.createElement('td');
+        const val = row[i] ?? '';
+        td.textContent = val;
+        if (!isNaN(parseFloat(val)) && val !== '') td.className = 'num';
+        tr.appendChild(td);
+      });
+      fragment.appendChild(tr);
+    });
+
+    tbody.innerHTML = '';
+    tbody.appendChild(fragment);
+
+    document.getElementById('rowCount').textContent = `${data.length}건`;
+  }
+
+  // 정렬
+  function sortBy(colIdx) {
+    if (sortCol === colIdx) {
+      sortAsc = !sortAsc;
+    } else {
+      sortCol = colIdx;
+      sortAsc = true;
+    }
+
+    // 헤더 표시
+    document.querySelectorAll('thead th').forEach((th, i) => {
+      th.className = i === colIdx ? (sortAsc ? 'sort-asc' : 'sort-desc') : '';
+    });
+
+    const filtered = getFiltered();
+    filtered.sort((a, b) => {
+      const av = a[colIdx] ?? '';
+      const bv = b[colIdx] ?? '';
+      const an = parseFloat(av), bn = parseFloat(bv);
+      if (!isNaN(an) && !isNaN(bn)) return sortAsc ? an - bn : bn - an;
+      return sortAsc ? String(av).localeCompare(String(bv), 'ko') : String(bv).localeCompare(String(av), 'ko');
+    });
+
+    renderTable(filtered);
+  }
+
+  // 필터
+  function getFiltered() {
+    const keyword = searchInput.value.trim().toLowerCase();
+    const month = monthFilter.value;
+
+    return allData.filter(row => {
+      // 키워드 검색
+      if (keyword) {
+        const match = row.some(cell => String(cell ?? '').toLowerCase().includes(keyword));
+        if (!match) return false;
+      }
+      // 월 필터 (출고일 컬럼 = index 1, 입고일 = index 2)
+      if (month) {
+        const dateVal = row[1] || row[2] || '';
+        const m = String(dateVal).match(/^\d{4}-(\d{2})/);
+        if (!m || parseInt(m[1]) !== parseInt(month)) return false;
+      }
+      return true;
+    });
+  }
+
+  searchInput.addEventListener('input', applyFilter);
+  monthFilter.addEventListener('change', applyFilter);
+
+  function applyFilter() {
+    sortCol = -1;
+    sortAsc = true;
+    renderTable(getFiltered());
+  }
+
+  resetBtn.addEventListener('click', () => {
+    searchInput.value = '';
+    monthFilter.value = '';
+    sortCol = -1;
+    sortAsc = true;
+    renderTable(allData);
+  });
+
+  function resetView() {
+    loading.classList.remove('visible');
+    dropZone.style.display = '';
+    fileInfo.classList.remove('visible');
+  }
+</script>
+
+</body>
+</html>
